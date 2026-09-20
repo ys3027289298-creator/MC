@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>荒原方格：失落地脉</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='1' width='14' height='14' fill='%237d8f55' stroke='%23e7b96b' stroke-width='2'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="game-canvas"></canvas>
+
+      <!-- 主菜单 -->
+      <div id="main-menu" class="overlay">
+        <div class="panel">
+          <h1 class="title">荒原方格</h1>
+          <h2 class="subtitle">失落地脉</h2>
+          <div class="seed-row">
+            <label>世界种子</label>
+            <input id="seed-input" type="text" placeholder="留空随机，推荐：WASTELAND-7" />
+          </div>
+          <button id="btn-new" class="big">开始新游戏</button>
+          <button id="btn-continue">继续游戏</button>
+          <button id="btn-settings">设置</button>
+          <div id="menu-hint" class="hint"></div>
+          <div class="controls-preview">
+            WASD 移动 · 鼠标视角 · 左键挖掘 · 右键放置 · E 背包/制作 · Shift 冲刺 · Ctrl 蹲下 · 空格 跳跃
+          </div>
+        </div>
+      </div>
+
+      <!-- 设置 -->
+      <div id="settings-menu" class="overlay hidden">
+        <div class="panel">
+          <h2>设置</h2>
+          <label class="setting-line">死亡掉落：
+            <select id="set-drop">
+              <option value="all">掉落全部物品</option>
+              <option value="half" selected>掉落一半物品</option>
+              <option value="none">保留所有物品</option>
+            </select>
+          </label>
+          <label class="setting-line">鼠标灵敏度：<input id="set-sens" type="range" min="0.3" max="3" step="0.1" value="1" /></label>
+          <label class="setting-line">渲染距离：
+            <select id="set-render">
+              <option value="3">近</option>
+              <option value="4" selected>标准</option>
+              <option value="6">远</option>
+            </select>
+          </label>
+          <button id="btn-settings-back" class="big">返回</button>
+        </div>
+      </div>
+
+      <!-- HUD -->
+      <div id="hud" class="hidden">
+        <div id="crosshair">+</div>
+        <div id="stats">
+          <div class="stat"><span>生命</span><div class="bar"><div id="bar-hp" class="fill hp"></div></div></div>
+          <div class="stat"><span>体力</span><div class="bar"><div id="bar-st" class="fill st"></div></div></div>
+          <div class="stat"><span>饱食</span><div class="bar"><div id="bar-food" class="fill food"></div></div></div>
+          <div class="stat"><span>体温</span><div class="bar"><div id="bar-temp" class="fill temp"></div></div></div>
+          <div class="stat"><span>安全</span><div class="bar"><div id="bar-safe" class="fill safe"></div></div></div>
+        </div>
+        <div id="env-info">
+          <span id="clock">第1天 06:00</span> · <span id="weather-name">晴天</span> · <span id="biome-name">草原</span>
+        </div>
+        <div id="objective">任务：<span id="objective-text">寻找临时落脚点</span></div>
+        <div id="toast-layer"></div>
+        <div id="break-progress" class="hidden"><div id="break-fill"></div></div>
+        <div id="hotbar"></div>
+        <div id="held-name"></div>
+      </div>
+
+      <!-- 背包与制作 -->
+      <div id="inventory-screen" class="overlay hidden">
+        <div class="panel wide">
+          <div class="inv-grid-block">
+            <h3>背包（容量 <span id="inv-count">0/24</span>）</h3>
+            <div id="inv-grid"></div>
+            <div class="inv-actions">
+              <button id="btn-split">拆分一半</button>
+              <button id="btn-drop">丢弃选中</button>
+              <button id="btn-close-inv">关闭 (E)</button>
+            </div>
+            <div id="item-detail" class="hint"></div>
+          </div>
+          <div class="craft-block">
+            <h3>制作 <span id="craft-station" class="hint"></span></h3>
+            <div id="recipe-list"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 储物箱 -->
+      <div id="chest-screen" class="overlay hidden">
+        <div class="panel wide">
+            <h3>储物箱</h3>
+            <div class="two-grids">
+              <div><h4>箱子</h4><div id="chest-grid"></div></div>
+              <div><h4>背包</h4><div id="chest-inv-grid"></div></div>
+            </div>
+            <button id="btn-close-chest">关闭</button>
+        </div>
+      </div>
+
+      <!-- 任务日志 -->
+      <div id="journal-screen" class="overlay hidden">
+        <div class="panel">
+          <h3>任务与事件日志 (J)</h3>
+          <div id="quest-list"></div>
+          <h4>事件记录</h4>
+          <div id="event-log"></div>
+          <button id="btn-close-journal">关闭</button>
+        </div>
+      </div>
+
+      <!-- 暂停 -->
+      <div id="pause-menu" class="overlay hidden">
+        <div class="panel">
+          <h2>已暂停</h2>
+          <button id="btn-resume" class="big">继续游戏</button>
+          <button id="btn-save">保存进度</button>
+          <button id="btn-journal">任务日志 (J)</button>
+          <button id="btn-quick-menu">返回主菜单（自动保存）</button>
+          <button id="btn-restart">重新开始（清除存档）</button>
+        </div>
+      </div>
+
+      <!-- 死亡 -->
+      <div id="death-screen" class="overlay hidden">
+        <div class="panel">
+          <h2 class="dead-title">你倒下了</h2>
+          <p id="death-cause"></p>
+          <p id="death-loss"></p>
+          <button id="btn-respawn" class="big">在据点重生</button>
+          <button id="btn-death-menu">返回主菜单</button>
+        </div>
+      </div>
+
+      <!-- 结局 -->
+      <div id="ending-screen" class="overlay hidden">
+        <div class="panel wide">
+          <h2 id="ending-title">信号传输完成</h2>
+          <p id="ending-text"></p>
+          <div id="ending-stats"></div>
+          <button id="btn-ending-menu" class="big">返回主菜单</button>
+        </div>
+      </div>
+
+      <!-- 开场提示 -->
+      <div id="intro" class="overlay hidden">
+        <div class="panel">
+          <h2 id="intro-title">荒原求生简报</h2>
+          <p id="intro-text"></p>
+          <button id="btn-intro-ok" class="big">开始生存</button>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>
