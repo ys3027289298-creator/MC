@@ -66,6 +66,7 @@ import {
   showDeath,
   showEnding,
   showLog,
+  resetLogFilter,
   showInventory,
   showCrafting,
   showContainer
@@ -434,6 +435,7 @@ export class GameEngine {
     this.enemies = [];
     this.projectiles = [];
     this.events = [];
+    resetLogFilter();
     this.stats = emptyStats();
     this.playTime = 0;
     this.eventTimer = 70;
@@ -705,7 +707,7 @@ export class GameEngine {
     showLog(this.uiRoot, this.events, () => {
       this.uiRoot.querySelector('#log-panel')?.remove();
       this.canvas.requestPointerLock?.();
-    });
+    }, this.playTime);
   }
 
   nearBlock(id: number, radius: number): boolean {

@@ -7,6 +7,17 @@ import { RECIPES } from '../game/recipes';
 import { GameEvent } from '../game/events';
 import { endingStatsHtml } from './ui';
 import { GameStats } from '../game/save';
+import {
+  LogFilter,
+  LOG_CATEGORIES,
+  categoryLabel,
+  defaultLogFilter,
+  filterEvents,
+  kindLabel,
+  normalizeEvents,
+  relativeTime,
+  statusText
+} from '../game/event-log';
 
 export function showPause(
   root: HTMLElement,
@@ -80,17 +91,86 @@ export function showEnding(
   panel.querySelector('#e-continue')?.addEventListener('click', cb.continuePlay);
 }
 
-export function showLog(root: HTMLElement, events: GameEvent[], onClose: () => void) {
+// Panel-session filter state: kept across close/reopen within the session, but
+// only ever affects the view — engine.events is never mutated here.
+let logFilter: LogFilter = defaultLogFilter();
+
+export function resetLogFilter(): void {
+  logFilter = defaultLogFilter();
+}
+
+export function showLog(root: HTMLElement, events: GameEvent[], onClose: () => void, now = 0) {
   root.querySelector('#log-panel')?.remove();
   const panel = el(`
     <div class="panel-window" id="log-panel">
       <div class="panel-head"><h3>荒原事件日志</h3><button id="log-close">关闭 (J)</button></div>
-      <div class="event-log">
-        ${events.length ? events.map((e) => `<div class="ev"><b>${e.title}</b> · ${e.detail}</div>`).join('') : '<div class="sub">荒原一片平静，尚未发生事件。</div>'}
-      </div>
+      <div class="panel-tabs" id="log-tabs"></div>
+      <input type="text" id="log-search" placeholder="搜索标题或详情…" autocomplete="off" />
+      <div class="sub" id="log-summary"></div>
+      <div class="event-log" id="log-list"></div>
     </div>
   `);
   root.appendChild(panel);
+  const views = normalizeEvents(events);
+  const tabs = panel.querySelector('#log-tabs') as HTMLElement;
+  const search = panel.querySelector('#log-search') as HTMLInputElement;
+  const summary = panel.querySelector('#log-summary') as HTMLElement;
+  const list = panel.querySelector('#log-list') as HTMLElement;
+  search.value = logFilter.query;
+
+  const renderList = () => {
+    const matched = filterEvents(views, logFilter);
+    summary.textContent = views.length
+      ? `共 ${views.length} 条事件 · 当前筛选命中 ${matched.length} 条`
+      : '共 0 条事件';
+    list.innerHTML = '';
+    if (!views.length) {
+      list.appendChild(el(`<div class="sub">荒原一片平静，尚未发生事件。</div>`));
+      return;
+    }
+    if (!matched.length) {
+      list.appendChild(el(`<div class="sub">当前筛选条件下没有匹配的事件。</div>`));
+      return;
+    }
+    for (const view of matched) {
+      const row = el(`
+        <div class="ev">
+          <div class="ev-head"><b class="ev-title"></b><span class="ev-time"></span></div>
+          <div class="ev-detail"></div>
+          <div class="ev-meta">
+            <span class="tag ev-cat"></span>
+            <span class="tag ev-kind"></span>
+            <span class="tag ev-status"></span>
+          </div>
+        </div>
+      `);
+      (row.querySelector('.ev-title') as HTMLElement).textContent = view.title;
+      (row.querySelector('.ev-time') as HTMLElement).textContent = relativeTime(view.time, now);
+      (row.querySelector('.ev-detail') as HTMLElement).textContent = view.detail;
+      (row.querySelector('.ev-cat') as HTMLElement).textContent = categoryLabel(view);
+      (row.querySelector('.ev-kind') as HTMLElement).textContent = kindLabel(view);
+      (row.querySelector('.ev-status') as HTMLElement).textContent = statusText(view);
+      list.appendChild(row);
+    }
+  };
+
+  const tabButtons: HTMLButtonElement[] = [];
+  for (const cat of LOG_CATEGORIES) {
+    const btn = el(`<button type="button" data-cat="${cat.id}">${cat.label}</button>`) as HTMLButtonElement;
+    btn.addEventListener('click', () => {
+      logFilter = { ...logFilter, category: cat.id };
+      tabButtons.forEach((b) => b.classList.toggle('active', b.dataset.cat === cat.id));
+      renderList();
+    });
+    tabButtons.push(btn);
+    tabs.appendChild(btn);
+  }
+  tabButtons.forEach((b) => b.classList.toggle('active', b.dataset.cat === logFilter.category));
+  search.addEventListener('input', () => {
+    logFilter = { ...logFilter, query: search.value };
+    renderList();
+  });
+  renderList();
   panel.querySelector('#log-close')?.addEventListener('click', onClose);
 }
 

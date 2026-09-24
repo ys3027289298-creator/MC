@@ -433,6 +433,24 @@ select {
   gap: 6px;
   font-size: 13px;
 }
+#log-tabs {
+  margin-bottom: 8px;
+}
+#log-search {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 6px;
+  background: rgba(24, 32, 40, 0.8);
+  border: 1px solid rgba(140, 190, 210, 0.3);
+  border-radius: 6px;
+  color: #dce8ec;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+#log-summary {
+  font-size: 12px;
+  margin-bottom: 8px;
+}
 .event-log .ev {
   border-left: 3px solid #e0a050;
   padding: 6px 10px;
@@ -440,6 +458,24 @@ select {
 }
 .event-log .ev b {
   color: #ffd98a;
+}
+.event-log .ev-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+.event-log .ev-time {
+  color: #8fa8b4;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.event-log .ev-detail {
+  margin: 2px 0 4px;
+}
+.event-log .ev-meta {
+  display: flex;
+  gap: 6px;
+  font-size: 11px;
 }
 #event-banner {
   position: absolute;

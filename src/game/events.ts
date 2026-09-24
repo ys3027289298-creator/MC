@@ -23,6 +23,9 @@ export interface GameEvent {
   detail: string;
   timeLimit?: number;
   resolved?: boolean;
+  // Optional display status for the log panel. Absent on legacy v1 saves;
+  // the log view falls back to "已记录" without touching event semantics.
+  status?: 'unresolved' | 'resolved';
 }
 
 export const EVENT_TITLES: Record<EventKind, string> = {
