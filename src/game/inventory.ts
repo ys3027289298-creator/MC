@@ -10,6 +10,15 @@ export interface ItemStack {
 
 export const HOTBAR_SIZE = 8;
 
+// itemDef throws on unknown ids; split/moveTo must fail safely instead.
+function tryItemDef(id: string): ItemDef | null {
+  try {
+    return itemDef(id);
+  } catch {
+    return null;
+  }
+}
+
 export class Inventory {
   slots: (ItemStack | null)[];
   hotbarIndex = 0;
@@ -21,6 +30,11 @@ export class Inventory {
 
   def(stack: ItemStack): ItemDef {
     return itemDef(stack.id);
+  }
+
+  // Only real, in-bounds slot indices may be read or written.
+  private isValidSlot(i: number): boolean {
+    return Number.isInteger(i) && i >= 0 && i < this.slots.length;
   }
 
   countItem(id: string): number {
@@ -103,6 +117,7 @@ export class Inventory {
 
   // Move whole stack between slots; returns false if destination blocked.
   moveTo(from: number, to: number): boolean {
+    if (!this.isValidSlot(from) || !this.isValidSlot(to)) return false;
     if (from === to) return true;
     const a = this.slots[from];
     const b = this.slots[to];
@@ -127,9 +142,16 @@ export class Inventory {
 
   // Split half (or given amount) into another slot.
   split(from: number, to: number, amount?: number): boolean {
+    // Validate everything before any write: a failed split must not
+    // mutate slots, hotbarIndex, armor or any involved object.
+    if (!this.isValidSlot(from) || !this.isValidSlot(to)) return false;
+    if (from === to) return false;
+    if (amount !== undefined && (!Number.isInteger(amount) || amount <= 0)) return false;
     const a = this.slots[from];
     if (!a || this.slots[to]) return false;
-    const d = itemDef(a.id);
+    if (!Number.isInteger(a.count) || a.count <= 0) return false;
+    const d = tryItemDef(a.id);
+    if (!d) return false;
     if (d.maxStack === 1) return this.moveTo(from, to);
     const n = amount ?? Math.ceil(a.count / 2);
     const take = Math.min(n, a.count);

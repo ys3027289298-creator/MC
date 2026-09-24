@@ -141,13 +141,15 @@ export function showInventory(root: HTMLElement, inv: Inventory, actions: PanelA
       slotEl.addEventListener('dragover', (ev) => ev.preventDefault());
       slotEl.addEventListener('drop', (ev) => {
         ev.preventDefault();
-        const from = Number((ev as DragEvent).dataTransfer?.getData('text/slot'));
-        if (!Number.isNaN(from)) {
-          if (ev.shiftKey) inv.split(from, i);
-          else inv.moveTo(from, i);
-          actions.onChange();
-          refresh();
-        }
+        // Missing or forged DataTransfer must never reach Inventory.
+        const raw = (ev as DragEvent).dataTransfer?.getData('text/slot') ?? '';
+        const from = raw.trim() === '' ? NaN : Number(raw);
+        if (!Number.isInteger(from) || from < 0 || from >= inv.size) return;
+        const ok = ev.shiftKey ? inv.split(from, i) : inv.moveTo(from, i);
+        // Exactly one state notification per successful drag; a failed
+        // operation only restores the view without firing onChange.
+        if (ok) refresh();
+        else renderSlots();
       });
       grid.appendChild(slotEl);
     });
