@@ -7,6 +7,19 @@ import { RECIPES } from '../game/recipes';
 import { GameEvent } from '../game/events';
 import { endingStatsHtml } from './ui';
 import { GameStats } from '../game/save';
+import {
+  CATEGORY_LABELS,
+  EMPTY_FILTER_TEXT,
+  EMPTY_LOG_TEXT,
+  EVENT_FILTERS,
+  EventFilter,
+  FILTER_LABELS,
+  STATUS_LABELS,
+  filterEvents,
+  formatRelativeTime,
+  normalizeEvents,
+  sortEvents
+} from '../game/event-log';
 
 export function showPause(
   root: HTMLElement,
@@ -80,17 +93,69 @@ export function showEnding(
   panel.querySelector('#e-continue')?.addEventListener('click', cb.continuePlay);
 }
 
-export function showLog(root: HTMLElement, events: GameEvent[], onClose: () => void) {
+// Panel-session filter state: kept across open/close, never written back to engine.events.
+let logFilter: EventFilter = 'all';
+let logKeyword = '';
+
+export function resetLogPanelState() {
+  logFilter = 'all';
+  logKeyword = '';
+}
+
+export function showLog(root: HTMLElement, events: GameEvent[], onClose: () => void, now = 0) {
   root.querySelector('#log-panel')?.remove();
   const panel = el(`
     <div class="panel-window" id="log-panel">
       <div class="panel-head"><h3>荒原事件日志</h3><button id="log-close">关闭 (J)</button></div>
-      <div class="event-log">
-        ${events.length ? events.map((e) => `<div class="ev"><b>${e.title}</b> · ${e.detail}</div>`).join('') : '<div class="sub">荒原一片平静，尚未发生事件。</div>'}
+      <div class="panel-tabs" id="log-tabs">
+        ${EVENT_FILTERS.map((f) => `<button data-filter="${f}">${FILTER_LABELS[f]}</button>`).join('')}
       </div>
+      <input type="text" id="log-search" placeholder="搜索标题或详情…" value="">
+      <div class="sub log-stats" id="log-stats"></div>
+      <div class="event-log" id="log-list"></div>
     </div>
   `);
   root.appendChild(panel);
+  const views = sortEvents(normalizeEvents(events));
+  const listEl = panel.querySelector('#log-list') as HTMLElement;
+  const statsEl = panel.querySelector('#log-stats') as HTMLElement;
+  const searchEl = panel.querySelector('#log-search') as HTMLInputElement;
+  searchEl.value = logKeyword;
+  const render = () => {
+    const filtered = filterEvents(views, logFilter, logKeyword);
+    statsEl.textContent = `共 ${views.length} 条事件 · 当前筛选命中 ${filtered.length} 条`;
+    panel.querySelectorAll('#log-tabs button').forEach((b) => {
+      b.classList.toggle('active', (b as HTMLElement).dataset.filter === logFilter);
+    });
+    if (!filtered.length) {
+      listEl.innerHTML = `<div class="sub">${views.length ? EMPTY_FILTER_TEXT : EMPTY_LOG_TEXT}</div>`;
+      return;
+    }
+    listEl.innerHTML = filtered
+      .map(
+        (v) => `
+        <div class="ev">
+          <div class="ev-meta">
+            <span class="ev-time">${formatRelativeTime(v.time, now)}</span>
+            <span class="tag">${CATEGORY_LABELS[v.category]}</span>
+            <span class="ev-status">${STATUS_LABELS[v.status]}</span>
+          </div>
+          <b>${v.title}</b> · ${v.detail}
+        </div>`
+      )
+      .join('');
+  };
+  panel.querySelectorAll('#log-tabs button').forEach((b) => {
+    b.addEventListener('click', () => {
+      logFilter = ((b as HTMLElement).dataset.filter as EventFilter) ?? 'all';
+      render();
+    });
+  });
+  searchEl.addEventListener('input', () => {
+    logKeyword = searchEl.value;
+    render();
+  });
+  render();
   panel.querySelector('#log-close')?.addEventListener('click', onClose);
 }
 

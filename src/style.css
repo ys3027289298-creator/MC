@@ -441,6 +441,26 @@ select {
 .event-log .ev b {
   color: #ffd98a;
 }
+.event-log .ev .ev-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 3px;
+  font-size: 11px;
+  color: #9fb4c0;
+}
+.event-log .ev .ev-status {
+  color: #8fe8d4;
+}
+#log-search {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 8px;
+}
+.log-stats {
+  font-size: 12px;
+  margin-bottom: 8px;
+}
 #event-banner {
   position: absolute;
   top: 90px;

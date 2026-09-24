@@ -705,7 +705,7 @@ export class GameEngine {
     showLog(this.uiRoot, this.events, () => {
       this.uiRoot.querySelector('#log-panel')?.remove();
       this.canvas.requestPointerLock?.();
-    });
+    }, this.playTime);
   }
 
   nearBlock(id: number, radius: number): boolean {
