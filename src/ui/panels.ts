@@ -131,8 +131,9 @@ export function showInventory(root: HTMLElement, inv: Inventory, actions: PanelA
       slotEl.addEventListener('click', () => actions.onUse(i));
       slotEl.addEventListener('contextmenu', (ev) => {
         ev.preventDefault();
+        const had = inv.slots[i] != null;
         actions.onDrop(i);
-        refresh();
+        refresh(had);
       });
       slotEl.addEventListener('dragstart', (ev) => {
         (ev as DragEvent).dataTransfer?.setData('text/slot', String(i));
@@ -141,26 +142,27 @@ export function showInventory(root: HTMLElement, inv: Inventory, actions: PanelA
       slotEl.addEventListener('dragover', (ev) => ev.preventDefault());
       slotEl.addEventListener('drop', (ev) => {
         ev.preventDefault();
-        const from = Number((ev as DragEvent).dataTransfer?.getData('text/slot'));
-        if (!Number.isNaN(from)) {
-          if (ev.shiftKey) inv.split(from, i);
-          else inv.moveTo(from, i);
-          actions.onChange();
-          refresh();
+        const raw = (ev as DragEvent).dataTransfer?.getData('text/slot');
+        const from = raw ? Number(raw) : NaN;
+        if (!Number.isInteger(from) || from < 0 || from >= inv.slots.length) {
+          renderSlots();
+          return;
         }
+        const changed = ev.shiftKey ? inv.split(from, i) : inv.moveTo(from, i);
+        refresh(changed);
       });
       grid.appendChild(slotEl);
     });
   };
-  const refresh = () => {
+  const refresh = (changed: boolean) => {
     renderSlots();
-    actions.onChange();
+    if (changed) actions.onChange();
   };
   renderSlots();
   panel.querySelector('#inv-close')?.addEventListener('click', actions.onClose);
   panel.querySelector('#inv-armor')?.addEventListener('click', () => {
     if (inv.selected()) actions.onEquip(inv.hotbarIndex);
-    refresh();
+    refresh(true);
   });
 }
 

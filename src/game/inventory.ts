@@ -1,6 +1,6 @@
 // Stack-based inventory with hotbar, equipment, split/drop support.
 
-import { itemDef, ItemDef } from './items';
+import { itemDef, ItemDef, ITEMS } from './items';
 
 export interface ItemStack {
   id: string;
@@ -21,6 +21,18 @@ export class Inventory {
 
   def(stack: ItemStack): ItemDef {
     return itemDef(stack.id);
+  }
+
+  // Valid slot index: integer within the existing slots array.
+  private slotOk(i: number): boolean {
+    return Number.isInteger(i) && i >= 0 && i < this.slots.length;
+  }
+
+  // A stack is usable only if its id resolves and its count is a
+  // positive integer within the item's maxStack.
+  private stackOk(s: ItemStack | null | undefined): s is ItemStack {
+    if (!s || typeof s.id !== 'string' || !(s.id in ITEMS)) return false;
+    return Number.isInteger(s.count) && s.count > 0 && s.count <= ITEMS[s.id].maxStack;
   }
 
   countItem(id: string): number {
@@ -103,6 +115,7 @@ export class Inventory {
 
   // Move whole stack between slots; returns false if destination blocked.
   moveTo(from: number, to: number): boolean {
+    if (!this.slotOk(from) || !this.slotOk(to)) return false;
     if (from === to) return true;
     const a = this.slots[from];
     const b = this.slots[to];
@@ -127,10 +140,15 @@ export class Inventory {
 
   // Split half (or given amount) into another slot.
   split(from: number, to: number, amount?: number): boolean {
+    // Validate everything before any write so failures are side-effect free.
+    if (!this.slotOk(from) || !this.slotOk(to)) return false;
     const a = this.slots[from];
-    if (!a || this.slots[to]) return false;
+    if (!this.stackOk(a)) return false;
+    if (this.slots[to] != null) return false;
+    if (amount !== undefined && (!Number.isInteger(amount) || amount <= 0)) return false;
     const d = itemDef(a.id);
     if (d.maxStack === 1) return this.moveTo(from, to);
+    if (from === to) return false;
     const n = amount ?? Math.ceil(a.count / 2);
     const take = Math.min(n, a.count);
     this.slots[to] = { id: a.id, count: take };
