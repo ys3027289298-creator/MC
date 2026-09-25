@@ -38,7 +38,25 @@ import { craft, CraftContext } from './crafting';
 import { RECIPES } from './recipes';
 import { createQuestProgress, QuestProgress, advanceQuest, evaluateEnding } from './quests';
 import { GameEvent, triggerEvent, pickEvent } from './events';
-import { GameSave, GameStats, emptyStats, saveGame, loadGame, clearSave } from './save';
+import {
+  GameSave,
+  GameStats,
+  emptyStats,
+  hasSave,
+  listSlots,
+  SlotId,
+  AUTO_SLOT_ID,
+  saveToSlot,
+  loadSlot,
+  deleteSlot,
+  firstEmptyManualSlot,
+  migrateLegacySave,
+  clearAllSaves,
+  clearSave,
+  readCurrentSlot,
+  writeCurrentSlot,
+  slotLabel
+} from './save';
 import { GameRenderer } from '../render/renderer';
 import {
   buildHud,
@@ -57,6 +75,7 @@ import {
   showSettings,
   showError,
   confirmRestart,
+  showSaveSlotPicker,
   RECOMMENDED_SEED,
   Settings
 } from '../ui/ui-dom';
@@ -120,11 +139,13 @@ export class GameEngine {
   lastChunkCheck = 0;
   spawnPoint = { x: 0.5, y: 40, z: 0.5 };
   damageFlashQueue = 0;
+  currentSlot: SlotId | null = null;
 
   constructor() {
     this.canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
     this.uiRoot = document.getElementById('ui') as HTMLElement;
     this.renderer = new GameRenderer(this.canvas);
+    this.currentSlot = readCurrentSlot();
     this.loadSettings();
     this.bindEvents();
     this.hud = buildHud(this.uiRoot);
@@ -151,15 +172,31 @@ export class GameEngine {
   showMenu() {
     this.mode = 'menu';
     document.exitPointerLock?.();
-    showMainMenu(this.uiRoot, !!localStorage.getItem('wasteland-grids-save-v1'), {
+    showMainMenu(this.uiRoot, {
+      slots: listSlots(),
+      legacy: hasSave(),
+      currentSlot: this.currentSlot
+    }, {
       start: (seed, route) => this.startNew(seed, route),
       continueGame: () => this.continueSave(),
       settings: () =>
         showSettings(this.uiRoot, this.settings, (s) => {
           this.settings = s;
           this.saveSettings();
-        }, () => this.showMenu())
+        }, () => this.showMenu()),
+      loadSlot: (id) => this.loadFromSlot(id),
+      deleteSlot: (id) => {
+        deleteSlot(id);
+        if (this.currentSlot === id) this.setCurrentSlot(null);
+        this.showMenu();
+      },
+      continueLegacy: () => this.continueLegacy()
     });
+  }
+
+  setCurrentSlot(id: SlotId | null) {
+    this.currentSlot = id;
+    writeCurrentSlot(id);
   }
 
   // ---------- main update ----------
@@ -419,6 +456,7 @@ export class GameEngine {
   }
 
   startNew(seedInput: string, route: 'fortify' | 'salvage') {
+    this.setCurrentSlot(null);
     const seed = seedInput || RECOMMENDED_SEED;
     this.world = new World(seed);
     this.rng = new Rng(hashSeed(seed));
@@ -452,12 +490,58 @@ export class GameEngine {
   }
 
   continueSave() {
-    const result = loadGame();
-    if (!result.ok) {
-      showError(this.uiRoot, result.error, () => this.showMenu());
+    const slots = listSlots();
+    const usable = slots.filter((s) => s.state === 'ok' && s.summary);
+    const preferred = usable.find((s) => s.id === this.currentSlot);
+    const latest = [...usable].sort((a, b) => (b.summary?.savedAt ?? 0) - (a.summary?.savedAt ?? 0))[0];
+    const target = preferred ?? latest;
+    if (target) {
+      this.loadFromSlot(target.id);
+    } else if (hasSave()) {
+      this.continueLegacy();
+    } else {
+      this.showMenu();
+    }
+  }
+
+  continueLegacy() {
+    const target = firstEmptyManualSlot();
+    if (!target) {
+      showError(this.uiRoot, '检测到旧版存档，但三个手动槽位都已占用。请先删除一个槽位再迁移。', () => this.showMenu(), () => {
+        clearAllSaves();
+        this.setCurrentSlot(null);
+      });
       return;
     }
-    const d = result.data;
+    const migrated = migrateLegacySave(target);
+    if (!migrated.ok) {
+      showError(this.uiRoot, migrated.error, () => this.showMenu(), () => {
+        clearAllSaves();
+        this.setCurrentSlot(null);
+      });
+      return;
+    }
+    toast(this.uiRoot, `旧版存档已迁移到${slotLabel(target)}。`);
+    this.loadFromSlot(target);
+  }
+
+  loadFromSlot(id: SlotId) {
+    const result = loadSlot(id);
+    if (!result.ok) {
+      showError(this.uiRoot, result.error, () => this.showMenu(), () => {
+        clearAllSaves();
+        this.setCurrentSlot(null);
+      });
+      return;
+    }
+    // only touch running state after the slot parsed cleanly
+    this.applySave(result.data);
+    this.setCurrentSlot(id);
+    this.enterPlay();
+    toast(this.uiRoot, `已读取${slotLabel(id)}，荒原等你归来。`);
+  }
+
+  applySave(d: GameSave) {
     this.world = World.fromSaveData(d.world as never);
     this.rng = new Rng(hashSeed(String(d.seed) + this.playTime));
     this.body = createBody(d.body.x, d.body.y, d.body.z);
@@ -473,8 +557,6 @@ export class GameEngine {
     this.enemies = [];
     this.projectiles = [];
     this.world.updateLoadedChunks(this.body.x, this.body.z);
-    this.enterPlay();
-    toast(this.uiRoot, '存档已读取，荒原等你归来。');
   }
 
   enterPlay() {
@@ -489,7 +571,9 @@ export class GameEngine {
     confirmRestart(
       this.uiRoot,
       () => {
+        if (this.currentSlot) deleteSlot(this.currentSlot);
         clearSave();
+        this.setCurrentSlot(null);
         this.showMenu();
       },
       () => {
@@ -502,6 +586,10 @@ export class GameEngine {
     if (this.mode !== 'playing') return;
     this.mode = 'paused';
     document.exitPointerLock?.();
+    this.showPausePanel();
+  }
+
+  showPausePanel() {
     showPause(this.uiRoot, {
       resume: () => this.resume(),
       restart: () => this.restartPrompt(),
@@ -509,10 +597,7 @@ export class GameEngine {
         this.writeSave();
         this.showMenu();
       },
-      save: () => {
-        this.writeSave();
-        toast(this.uiRoot, '进度已保存。');
-      },
+      save: () => this.openSaveSlotPicker(),
       settings: () =>
         showSettings(
           this.uiRoot,
@@ -521,8 +606,24 @@ export class GameEngine {
             this.settings = s;
             this.saveSettings();
           },
-          () => this.pause()
+          () => this.showPausePanel()
         )
+    });
+  }
+
+  openSaveSlotPicker() {
+    hidePause(this.uiRoot);
+    showSaveSlotPicker(this.uiRoot, listSlots(), {
+      save: (id) => {
+        const r = this.saveToManualSlot(id);
+        if (r.ok) {
+          toast(this.uiRoot, `进度已保存到${slotLabel(id)}。`);
+        } else {
+          toast(this.uiRoot, '保存失败：' + (r.error ?? '未知错误'), 'bad');
+        }
+        this.showPausePanel();
+      },
+      cancel: () => this.showPausePanel()
     });
   }
 
@@ -534,8 +635,8 @@ export class GameEngine {
     this.canvas.requestPointerLock?.();
   }
 
-  writeSave(): boolean {
-    const data: GameSave = {
+  buildSaveData(): GameSave {
+    return {
       version: 1,
       savedAt: Date.now(),
       playTime: this.playTime,
@@ -550,9 +651,19 @@ export class GameEngine {
       stats: this.stats,
       route: this.quest.route
     };
-    const r = saveGame(data);
+  }
+
+  // autosave / beforeunload / menu-exit all write only the auto slot
+  writeSave(): boolean {
+    const r = saveToSlot(AUTO_SLOT_ID, this.buildSaveData(), localStorage, 'auto');
     if (!r.ok) toast(this.uiRoot, '保存失败：' + r.error, 'bad');
     return r.ok;
+  }
+
+  saveToManualSlot(id: SlotId): { ok: boolean; error?: string } {
+    const r = saveToSlot(id, this.buildSaveData(), localStorage, 'manual');
+    if (r.ok) this.setCurrentSlot(id);
+    return r;
   }
 
   // ---------- input ----------

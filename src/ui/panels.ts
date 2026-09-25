@@ -17,7 +17,7 @@ export function showPause(
   const panel = el(`
     <div class="screen" id="pause-panel">
       <h2>已暂停</h2>
-      <div class="menu-row"><button id="p-resume">继续游戏</button><button id="p-save">保存进度</button></div>
+      <div class="menu-row"><button id="p-resume">继续游戏</button><button id="p-save">保存到槽位…</button></div>
       <div class="menu-row"><button id="p-settings">设置</button><button id="p-restart">重新开始</button><button id="p-menu">返回主菜单</button></div>
       <div class="controls-help">进度会在关闭面板时自动保存。鼠标已解除锁定。</div>
     </div>

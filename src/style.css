@@ -496,3 +496,63 @@ select {
   color: #8fe8d4;
   margin-left: 6px;
 }
+
+/* save slot list (main menu / save picker) */
+.slot-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(620px, 92vw);
+  max-height: 40vh;
+  overflow-y: auto;
+}
+.slot-row {
+  background: rgba(16, 22, 29, 0.75);
+  border: 1px solid rgba(140, 190, 210, 0.25);
+  border-radius: 8px;
+  padding: 8px 14px;
+  text-align: left;
+}
+.slot-row.corrupt {
+  border-color: #d06060;
+}
+.slot-row.legacy {
+  border-color: #ffd98a;
+}
+.slot-row.disabled {
+  opacity: 0.65;
+}
+.slot-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #8fe8d4;
+}
+.slot-head .tag {
+  font-size: 11px;
+  color: #0d1418;
+  background: #8fe8d4;
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.slot-btns {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+.slot-btns button {
+  font-size: 12px;
+  padding: 4px 12px;
+}
+.slot-meta {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #9fb3c8;
+  line-height: 1.6;
+}
+.slot-meta .slot-empty {
+  color: #6d8093;
+}
+.slot-meta .slot-corrupt {
+  color: #ffb0a0;
+}
