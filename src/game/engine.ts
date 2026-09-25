@@ -458,17 +458,48 @@ export class GameEngine {
       return;
     }
     const d = result.data;
-    this.world = World.fromSaveData(d.world as never);
+    // Build every restored object first; only swap live state once all of them
+    // exist, so a failure here can never half-replace the running game.
+    let restored: {
+      world: World;
+      body: PlayerBody;
+      inventory: Inventory;
+      survival: SurvivalState;
+      environment: EnvironmentState;
+      quest: QuestProgress;
+      events: GameEvent[];
+      stats: GameStats;
+    };
+    try {
+      restored = {
+        world: World.fromSaveData(d.world as never),
+        body: createBody(d.body.x, d.body.y, d.body.z),
+        inventory: Inventory.fromJSON(d.inventory as never),
+        survival: Object.assign(createSurvival(), d.survival),
+        environment: Object.assign(createEnvironment(), d.environment),
+        quest: Object.assign(createQuestProgress(), d.quests),
+        events: (d.events ?? []) as GameEvent[],
+        stats: { ...emptyStats(), ...d.stats }
+      };
+    } catch (e) {
+      showError(
+        this.uiRoot,
+        `存档已损坏，恢复失败：${e instanceof Error ? e.message : String(e)}`,
+        () => this.showMenu()
+      );
+      return;
+    }
+    this.world = restored.world;
     this.rng = new Rng(hashSeed(String(d.seed) + this.playTime));
-    this.body = createBody(d.body.x, d.body.y, d.body.z);
+    this.body = restored.body;
     this.yaw = d.body.yaw;
     this.pitch = d.body.pitch;
-    this.inventory = Inventory.fromJSON(d.inventory as never);
-    this.survival = Object.assign(createSurvival(), d.survival);
-    this.environment = Object.assign(createEnvironment(), d.environment);
-    this.quest = Object.assign(createQuestProgress(), d.quests);
-    this.events = (d.events ?? []) as GameEvent[];
-    this.stats = { ...emptyStats(), ...d.stats };
+    this.inventory = restored.inventory;
+    this.survival = restored.survival;
+    this.environment = restored.environment;
+    this.quest = restored.quest;
+    this.events = restored.events;
+    this.stats = restored.stats;
     this.playTime = d.playTime ?? 0;
     this.enemies = [];
     this.projectiles = [];
