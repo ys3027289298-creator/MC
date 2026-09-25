@@ -1,6 +1,7 @@
 // Larger overlay screens: main menu, settings, inventory panel, crafting, logs, pause, death, ending.
 
-import { el } from './ui';
+import { el, slotSummaryHtml, SLOT_LABELS } from './ui';
+import { SlotId, SlotInfo } from '../game/save';
 
 export function clearScreens(root: HTMLElement) {
   root.querySelectorAll('.screen, .panel-window').forEach((n) => n.remove());
@@ -9,13 +10,23 @@ export function clearScreens(root: HTMLElement) {
 export interface MenuCallbacks {
   start: (seed: string, route: 'fortify' | 'salvage') => void;
   continueGame: () => void;
+  loadSlot: (id: SlotId) => void;
+  deleteSlot: (id: SlotId) => void;
   settings: () => void;
 }
 
 export const RECOMMENDED_SEED = 'LEYLINE-2049';
 
-export function showMainMenu(root: HTMLElement, hasSave: boolean, cb: MenuCallbacks) {
+export interface SaveMenuInfo {
+  slots: SlotInfo[];
+  currentSlot: SlotId | null;
+  legacy: boolean;
+  envelopeError?: string;
+}
+
+export function showMainMenu(root: HTMLElement, saveInfo: SaveMenuInfo, cb: MenuCallbacks) {
   clearScreens(root);
+  const canContinue = saveInfo.legacy || saveInfo.slots.some((s) => s.state === 'ok');
   const screen = el(`
     <div class="screen">
       <h1>荒原方格</h1>
@@ -34,8 +45,14 @@ export function showMainMenu(root: HTMLElement, hasSave: boolean, cb: MenuCallba
       </div>
       <div class="menu-row">
         <button id="btn-start" style="font-size:17px;padding:12px 30px">开始游戏</button>
-        <button id="btn-continue" ${hasSave ? '' : 'disabled'}>继续游戏</button>
+        <button id="btn-continue" ${canContinue ? '' : 'disabled'}>继续游戏</button>
         <button id="btn-settings">设置</button>
+      </div>
+      <div class="save-slots-wrap">
+        <h3>存档槽位</h3>
+        ${saveInfo.envelopeError ? `<div class="error-box">存档列表读取失败：${saveInfo.envelopeError}（已按空槽位显示）</div>` : ''}
+        ${saveInfo.legacy ? '<div class="legacy-notice">检测到旧版单存档：选择继续游戏或保存时会自动迁移到空闲手动槽位，不会被丢弃。</div>' : ''}
+        <div class="save-slots" id="save-slots"></div>
       </div>
       <div class="controls-help">
         <b>WASD</b> 移动 · <b>鼠标</b> 视角 · <b>Shift</b> 冲刺 · <b>Ctrl</b> 蹲下 · <b>空格</b> 跳跃<br>
@@ -57,6 +74,71 @@ export function showMainMenu(root: HTMLElement, hasSave: boolean, cb: MenuCallba
   });
   screen.querySelector('#btn-continue')?.addEventListener('click', cb.continueGame);
   screen.querySelector('#btn-settings')?.addEventListener('click', () => cb.settings());
+
+  const slotsEl = screen.querySelector('#save-slots') as HTMLElement;
+  const stateText: Record<SlotInfo['state'], string> = {
+    empty: '空闲',
+    ok: saveInfo.currentSlot ? '' : '已有存档',
+    corrupt: '已损坏'
+  };
+  for (const info of saveInfo.slots) {
+    const tag =
+      info.state === 'ok'
+        ? info.id === saveInfo.currentSlot
+          ? '当前进度'
+          : '已有存档'
+        : stateText[info.state];
+    const row = el(`
+      <div class="save-slot ${info.state}" data-slot="${info.id}">
+        <div class="slot-head"><b>${SLOT_LABELS[info.id]}</b><span class="tag">${tag}</span></div>
+        <div class="slot-meta">${slotSummaryHtml(info)}</div>
+        <div class="slot-actions"></div>
+      </div>
+    `);
+    const actions = row.querySelector('.slot-actions') as HTMLElement;
+    if (info.state === 'ok') {
+      const loadBtn = el(`<button class="slot-load">载入</button>`);
+      loadBtn.addEventListener('click', () => cb.loadSlot(info.id));
+      actions.appendChild(loadBtn);
+      const delBtn = el(`<button class="slot-delete">删除</button>`);
+      delBtn.addEventListener('click', () => {
+        confirmBox(root, '删除槽位？', `将永久删除「${SLOT_LABELS[info.id]}」中的存档，其它槽位不受影响。`, () =>
+          cb.deleteSlot(info.id)
+        );
+      });
+      actions.appendChild(delBtn);
+    }
+    slotsEl.appendChild(row);
+  }
+}
+
+export function confirmBox(
+  root: HTMLElement,
+  title: string,
+  message: string,
+  onConfirm: () => void,
+  onCancel: () => void = () => undefined
+) {
+  root.querySelector('#confirm-box')?.remove();
+  const box = el(`
+    <div class="screen" id="confirm-box">
+      <h2>${title}</h2>
+      <div class="error-box">${message}</div>
+      <div class="menu-row">
+        <button id="cb-yes">确认</button>
+        <button id="cb-no">取消</button>
+      </div>
+    </div>
+  `);
+  root.appendChild(box);
+  box.querySelector('#cb-yes')?.addEventListener('click', () => {
+    box.remove();
+    onConfirm();
+  });
+  box.querySelector('#cb-no')?.addEventListener('click', () => {
+    box.remove();
+    onCancel();
+  });
 }
 
 export interface Settings {
@@ -109,7 +191,7 @@ export function showSettings(
   screen.querySelector('#set-back')?.addEventListener('click', onBack);
 }
 
-export function showError(root: HTMLElement, message: string, onBack: () => void) {
+export function showError(root: HTMLElement, message: string, onBack: () => void, onClear?: () => void) {
   clearScreens(root);
   const screen = el(`
     <div class="screen">
@@ -124,8 +206,12 @@ export function showError(root: HTMLElement, message: string, onBack: () => void
   root.appendChild(screen);
   screen.querySelector('#err-back')?.addEventListener('click', onBack);
   screen.querySelector('#err-new')?.addEventListener('click', () => {
-    localStorage.removeItem('wasteland-grids-save-v1');
-    onBack();
+    if (onClear) onClear();
+    else {
+      localStorage.removeItem('wasteland-grids-save-v1');
+      localStorage.removeItem('wasteland-grids-save-slots-v2');
+      onBack();
+    }
   });
 }
 

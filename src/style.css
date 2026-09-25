@@ -496,3 +496,64 @@ select {
   color: #8fe8d4;
   margin-left: 6px;
 }
+
+/* save slots */
+.save-slots-wrap {
+  margin-top: 14px;
+  max-width: 560px;
+}
+.save-slots-wrap h3 {
+  color: #8fe8d4;
+  margin-bottom: 8px;
+}
+.save-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.save-slot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: rgba(20, 30, 34, 0.75);
+  border: 1px solid rgba(140, 230, 210, 0.18);
+  border-radius: 8px;
+  text-align: left;
+}
+.save-slot.corrupt {
+  border-color: rgba(220, 90, 90, 0.45);
+}
+.save-slot .slot-head {
+  min-width: 96px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.save-slot .slot-meta {
+  flex: 1;
+  font-size: 12px;
+  color: #cfe6dd;
+}
+.save-slot .slot-empty {
+  color: #7d948c;
+}
+.save-slot .slot-corrupt {
+  color: #e89a9a;
+}
+.save-slot .slot-actions {
+  display: flex;
+  gap: 6px;
+}
+.save-slot .slot-actions button {
+  padding: 4px 12px;
+  font-size: 13px;
+}
+.legacy-notice {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 217, 138, 0.4);
+  border-radius: 8px;
+  color: #ffd98a;
+  font-size: 13px;
+}

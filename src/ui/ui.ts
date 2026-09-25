@@ -6,7 +6,7 @@ import { ITEMS, itemDef } from '../game/items';
 import { RECIPES } from '../game/recipes';
 import { QUESTS } from '../game/quests';
 import { GameEvent } from '../game/events';
-import { GameStats } from '../game/save';
+import { GameStats, SlotId, SlotInfo } from '../game/save';
 
 export function hexColor(n: number): string {
   return '#' + n.toString(16).padStart(6, '0');
@@ -196,6 +196,54 @@ export function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
   return `${m}分${String(s).padStart(2, '0')}秒`;
+}
+
+export const SLOT_LABELS: Record<SlotId, string> = {
+  slot1: '槽位 1',
+  slot2: '槽位 2',
+  slot3: '槽位 3',
+  auto: '自动保存'
+};
+
+export function escapeHtml(text: string): string {
+  return text.replace(/[&<>"']/g, (c) => {
+    switch (c) {
+      case '&':
+        return '&amp;';
+      case '<':
+        return '&lt;';
+      case '>':
+        return '&gt;';
+      case '"':
+        return '&quot;';
+      default:
+        return '&#39;';
+    }
+  });
+}
+
+export function formatSavedAt(savedAt: number): string {
+  if (!Number.isFinite(savedAt) || savedAt <= 0) return '时间未知';
+  const d = new Date(savedAt);
+  if (Number.isNaN(d.getTime())) return '时间未知';
+  return d.toLocaleString();
+}
+
+// One-line safe summary for a slot; never throws on malformed metadata.
+export function slotSummaryHtml(info: SlotInfo): string {
+  if (info.state === 'corrupt') {
+    return `<span class="slot-corrupt">存档损坏，无法读取${info.error ? '：' + escapeHtml(info.error) : ''}</span>`;
+  }
+  if (info.state === 'empty' || !info.summary) {
+    return '<span class="slot-empty">空闲 — 可在暂停菜单保存到这里</span>';
+  }
+  const s = info.summary;
+  const route = s.route === 'fortify' ? '固守工事' : '拾荒奇兵';
+  const day = Number.isFinite(s.day) && s.day >= 1 ? Math.floor(s.day) : 1;
+  return (
+    `种子 ${escapeHtml(s.seed || '未知种子')} · ${route} · 第 ${day} 天` +
+    ` · 游玩 ${formatTime(Math.max(0, s.playTime || 0))} · 保存于 ${formatSavedAt(s.savedAt)}`
+  );
 }
 
 export function endingStatsHtml(stats: GameStats, playTime: number): string {

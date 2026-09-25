@@ -1,12 +1,12 @@
 // In-game overlay panels: inventory drag&split, crafting, event log, storage, pause, death, ending.
 
-import { el, stackHtml, tooltipHtml } from './ui';
+import { el, stackHtml, tooltipHtml, slotSummaryHtml, SLOT_LABELS } from './ui';
 import { Inventory, ItemStack } from '../game/inventory';
 import { itemDef } from '../game/items';
 import { RECIPES } from '../game/recipes';
 import { GameEvent } from '../game/events';
 import { endingStatsHtml } from './ui';
-import { GameStats } from '../game/save';
+import { GameStats, SlotId, SlotInfo } from '../game/save';
 
 export function showPause(
   root: HTMLElement,
@@ -17,9 +17,9 @@ export function showPause(
   const panel = el(`
     <div class="screen" id="pause-panel">
       <h2>已暂停</h2>
-      <div class="menu-row"><button id="p-resume">继续游戏</button><button id="p-save">保存进度</button></div>
+      <div class="menu-row"><button id="p-resume">继续游戏</button><button id="p-save">保存进度（选择槽位）</button></div>
       <div class="menu-row"><button id="p-settings">设置</button><button id="p-restart">重新开始</button><button id="p-menu">返回主菜单</button></div>
-      <div class="controls-help">进度会在关闭面板时自动保存。鼠标已解除锁定。</div>
+      <div class="controls-help">自动保存每 30 秒写入「自动保存」槽位；手动保存可任选 3 个槽位。鼠标已解除锁定。</div>
     </div>
   `);
   root.appendChild(panel);
@@ -32,6 +32,41 @@ export function showPause(
 
 export function hidePause(root: HTMLElement) {
   root.querySelector('#pause-panel')?.remove();
+}
+
+// Save-as picker: manual slots only; the auto slot is system-owned.
+export function showSaveSlots(
+  root: HTMLElement,
+  slots: SlotInfo[],
+  cb: { pick: (id: SlotId) => void; close: () => void }
+) {
+  root.querySelector('#save-slots-panel')?.remove();
+  const panel = el(`
+    <div class="panel-window" id="save-slots-panel">
+      <div class="panel-head"><h3>保存到槽位</h3><button id="ss-close">关闭</button></div>
+      <div class="sub" style="font-size:12px;margin-bottom:8px">选择要写入的手动槽位；「自动保存」槽位由系统每 30 秒写入，不能手动覆盖。</div>
+      <div class="save-slots" id="ss-list"></div>
+    </div>
+  `);
+  root.appendChild(panel);
+  const list = panel.querySelector('#ss-list') as HTMLElement;
+  for (const info of slots) {
+    const row = el(`
+      <div class="save-slot ${info.state}" data-slot="${info.id}">
+        <div class="slot-head"><b>${SLOT_LABELS[info.id]}</b><span class="tag">${info.state === 'ok' ? '已有存档' : info.state === 'corrupt' ? '已损坏' : '空闲'}</span></div>
+        <div class="slot-meta">${slotSummaryHtml(info)}</div>
+        <div class="slot-actions"></div>
+      </div>
+    `);
+    const btn = el(`<button class="slot-pick">${info.state === 'ok' ? '覆盖保存' : '保存到这里'}</button>`);
+    btn.addEventListener('click', () => cb.pick(info.id));
+    (row.querySelector('.slot-actions') as HTMLElement).appendChild(btn);
+    list.appendChild(row);
+  }
+  panel.querySelector('#ss-close')?.addEventListener('click', () => {
+    panel.remove();
+    cb.close();
+  });
 }
 
 export function showDeath(
