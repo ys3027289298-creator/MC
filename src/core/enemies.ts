@@ -1,6 +1,7 @@
 import { Rng } from './rng';
 import { World } from './world';
 import { PlayerState, collides } from './player';
+import { BLOCKS, BlockId } from './blocks';
 
 export type EnemyKind = 'duststalker' | 'cavemaw' | 'ruinsentinel';
 export type EnemyStateName = 'patrol' | 'chase' | 'attack' | 'return' | 'dead';
@@ -16,6 +17,7 @@ export interface Enemy {
   state: EnemyStateName;
   homeX: number; homeZ: number;
   target: number;
+  memory: number;
   attackCd: number;
   hurtFlash: number;
   onGround: boolean;
@@ -37,7 +39,7 @@ export function spawnEnemy(kind: EnemyKind, x: number, y: number, z: number): En
   return {
     id: nextId++, kind, x, y, z, vx: 0, vy: 0, vz: 0,
     hp: d.hp, maxHp: d.hp, damage: d.damage, speed: d.speed,
-    state: 'patrol', homeX: x, homeZ: z, target: 0, attackCd: 0, hurtFlash: 0, onGround: false,
+    state: 'patrol', homeX: x, homeZ: z, target: 0, memory: 0, attackCd: 0, hurtFlash: 0, onGround: false,
     nightOnly: d.nightOnly, drop: d.drops,
   };
 }
@@ -46,26 +48,30 @@ export function dist2D(e: Enemy, p: PlayerState): number {
   return Math.hypot(e.x - p.x, e.z - p.z);
 }
 
-// 视线检测：视线中点高度上不能有实心方块
+// 材质是否遮挡视线：实心且不透明（液体、植物、玻璃等透明材质不遮挡）
+export function blocksSight(id: number): boolean {
+  const def = BLOCKS[id];
+  return !!def && def.solid === true && !def.transparent && !def.liquid;
+}
+
+// 视线检测：视线路径上不能有遮挡方块；打开的门视为空气
 export function hasLineOfSight(world: World, e: Enemy, p: PlayerState, eyeY = 1.5): boolean {
   const steps = Math.ceil(Math.hypot(p.x - e.x, p.z - e.z) * 2);
   for (let i = 1; i < steps; i++) {
     const t = i / steps;
     const x = e.x + (p.x - e.x) * t;
     const z = e.z + (p.z - e.z) * t;
-    const y = (e.y + eyeY) + (p.y + eyeY - (e.y + eyeY)) * t;
-    const id = world.getBlock(Math.floor(x), Math.floor(y), Math.floor(z));
-    if (id !== 0 && !(id === 7 || id === 8 || id === 18 || id === 10)) {
-      const solid = require_solid(id);
-      if (solid) return false;
-    }
+    const y = (e.y + eyeY) + (p.y - e.y) * t;
+    const bx = Math.floor(x), by = Math.floor(y), bz = Math.floor(z);
+    let id = world.getBlock(bx, by, bz);
+    if (id === BlockId.Door && world.doorOpen.has(World.blockKey(bx, by, bz))) id = BlockId.Air;
+    if (blocksSight(id)) return false;
   }
   return true;
 }
-function require_solid(id: number): boolean {
-  // 内联避免循环依赖：非空气/液体/植物即阻挡
-  return id !== 7 && id !== 8 && id !== 18 && id !== 10;
-}
+
+// 失去视线后仍记住目标的秒数，记忆耗尽则放弃追击返回出生点
+const TARGET_MEMORY = 3;
 
 export interface EnemyUpdateResult {
   damageToPlayer: number;
@@ -79,14 +85,29 @@ export function updateEnemy(e: Enemy, world: World, p: PlayerState, dt: number, 
   if (e.attackCd > 0) e.attackCd -= dt;
   const def = ENEMY_DEFS[e.kind];
   const d = dist2D(e, p);
-  const sees = p.alive && d < def.sight * (night ? 1.35 : 1) * (1 + weatherDanger * 0.2) && hasLineOfSight(world, e, p);
+  // 单一判定来源：玩家存活 + 处于有效感知距离 + 视线未被实体方块截断
+  const sightRange = def.sight * (night ? 1.35 : 1) * (1 + weatherDanger * 0.2);
+  const sees = p.alive && d < sightRange && hasLineOfSight(world, e, p);
 
-  // 状态机
+  // 目标记忆：有视线时刷新，失去视线后随 dt 衰减，耗尽即放弃目标
+  if (sees) e.memory = TARGET_MEMORY;
+  else e.memory = Math.max(0, (e.memory ?? 0) - dt);
+  const lost = d > def.sight * 1.4 || e.memory <= 0;
+
+  // 状态机：进入或保持 chase/attack 都必须满足 sees
   if (e.state === 'patrol' && sees) e.state = 'chase';
-  else if (e.state === 'chase' && !sees && d > def.sight * 1.4) e.state = 'return';
-  else if (e.state === 'return' && Math.hypot(e.x - e.homeX, e.z - e.homeZ) < 2) e.state = 'patrol';
-  if (e.state === 'chase' && d < def.attackRange) e.state = 'attack';
-  if (e.state === 'attack' && d > def.attackRange + 0.6) e.state = 'chase';
+  else if (e.state === 'return') {
+    if (sees) e.state = 'chase';
+    else if (Math.hypot(e.x - e.homeX, e.z - e.homeZ) < 2) e.state = 'patrol';
+  }
+  if (e.state === 'chase') {
+    if (sees && d < def.attackRange) e.state = 'attack';
+    else if (!sees && lost) e.state = 'return';
+  }
+  if (e.state === 'attack') {
+    if (!sees) e.state = lost ? 'return' : 'chase';
+    else if (d > def.attackRange + 0.6) e.state = 'chase';
+  }
 
   let tx = 0, tz = 0;
   if (e.state === 'patrol') {
@@ -94,10 +115,11 @@ export function updateEnemy(e: Enemy, world: World, p: PlayerState, dt: number, 
     if (e.target > 3) { e.target = 0; }
     const ang = Math.sin(e.target * 2 + e.id) + e.id;
     tx = Math.cos(ang) * 0.4; tz = Math.sin(ang) * 0.4;
-  } else if (e.state === 'chase' || e.state === 'attack') {
+  } else if ((e.state === 'chase' || e.state === 'attack') && sees) {
     const a = Math.atan2(p.x - e.x, p.z - e.z);
     tx = Math.sin(a); tz = Math.cos(a);
-    if (e.state === 'attack' && d < def.attackRange && e.attackCd <= 0) {
+    // 造成伤害前再次确认本帧视线与距离，不依赖上一帧状态
+    if (e.state === 'attack' && d < def.attackRange && e.attackCd <= 0 && hasLineOfSight(world, e, p)) {
       result.damageToPlayer = e.damage;
       e.attackCd = 1.2;
     }

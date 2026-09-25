@@ -1044,11 +1044,15 @@ export class Game {
       const e = this.enemies[i];
       if (e.state === 'dead') {
         // 死亡后短暂由渲染淡出，下一帧移除（掉落已在 onEnemyKilled 产生）
-        if (e.hurtFlash < -0.3) this.enemies.splice(i, 1);
+        if (e.hurtFlash < -0.3) {
+          this.buildingHitTimers.delete(e.id);
+          this.enemies.splice(i, 1);
+        }
         continue;
       }
       const res = updateEnemy(e, this.world, this.player, dt, night, wInfo.danger);
-      if (res.damageToPlayer > 0) {
+      // 伤害只来自 core 状态机的本帧判定；玩家已死亡则后续敌人不再触发新的死亡副作用
+      if (res.damageToPlayer > 0 && this.player.alive) {
         const armor = this.equippedArmor();
         const r = damagePlayer(this.player, res.damageToPlayer, armor, `被${ENEMY_DEFS[e.kind].name}击倒`);
         this.ui.flashHurt();
@@ -1057,13 +1061,21 @@ export class Game {
       // 找不到玩家（玩家躲在封闭建筑内）时攻击附近建筑
       this.enemyDamageBuildings(e, dt);
       // 距离过远则回收
-      if (Math.hypot(e.x - this.player.x, e.z - this.player.z) > 90) this.enemies.splice(i, 1);
+      if (Math.hypot(e.x - this.player.x, e.z - this.player.z) > 90) {
+        this.buildingHitTimers.delete(e.id);
+        this.enemies.splice(i, 1);
+      }
     }
   }
 
+  // 敌人拆建筑的节拍计时（按游戏 dt 累积，不用墙上时钟）
+  private buildingHitTimers = new Map<number, number>();
+
   private enemyDamageBuildings(e: Enemy, dt: number): void {
-    if (e.state === 'patrol' || e.state === 'return') return;
-    if (Math.floor(performance.now() / 800 + e.id) !== Math.floor((performance.now() - dt * 1000) / 800 + e.id)) {
+    if (e.state === 'patrol' || e.state === 'return' || e.state === 'dead') return;
+    const t = (this.buildingHitTimers.get(e.id) ?? 0) + dt;
+    if (t >= 0.8) {
+      this.buildingHitTimers.set(e.id, t - 0.8);
       const bx = Math.floor(e.x), by = Math.floor(e.y), bz = Math.floor(e.z);
       for (let dx = -1; dx <= 1; dx++) for (let dy = 0; dy <= 2; dy++) for (let dz = -1; dz <= 1; dz++) {
         const x = bx + dx, y = by + dy, z = bz + dz;
@@ -1082,6 +1094,8 @@ export class Game {
         }
         return;
       }
+    } else {
+      this.buildingHitTimers.set(e.id, t);
     }
   }
 
@@ -1157,10 +1171,15 @@ export class Game {
     this.last = now;
     dt = Math.min(dt, 0.05);
 
+    this.update(dt);
+    this.renderFrame();
+  }
+
+  // 单帧游戏更新：暂停、结束或非游玩模式下不产生任何结算
+  update(dt: number): void {
     if (this.mode === 'play' && !this.paused && !this.ended) {
       this.tick(dt);
     }
-    this.renderFrame();
   }
 
   private tick(dt: number): void {
