@@ -1048,7 +1048,8 @@ export class Game {
         continue;
       }
       const res = updateEnemy(e, this.world, this.player, dt, night, wInfo.danger);
-      if (res.damageToPlayer > 0) {
+      // 玩家已死亡时不再结算伤害，避免后续敌人重复触发死亡副作用
+      if (res.damageToPlayer > 0 && this.player.alive) {
         const armor = this.equippedArmor();
         const r = damagePlayer(this.player, res.damageToPlayer, armor, `被${ENEMY_DEFS[e.kind].name}击倒`);
         this.ui.flashHurt();
@@ -1157,10 +1158,15 @@ export class Game {
     this.last = now;
     dt = Math.min(dt, 0.05);
 
+    this.update(dt);
+    this.renderFrame();
+  }
+
+  // 单步推进游戏逻辑；暂停、菜单或已结束时调用不会产生任何效果
+  update(dt: number): void {
     if (this.mode === 'play' && !this.paused && !this.ended) {
       this.tick(dt);
     }
-    this.renderFrame();
   }
 
   private tick(dt: number): void {
